@@ -23,7 +23,7 @@ struct UsageEntry: Codable {
 }
 
 // MARK: - Aggregated Daily Usage
-struct DailyUsage: Identifiable {
+struct DailyUsage: Identifiable, Equatable {
 	let id = UUID()
 	let date: Date
 	let dateString: String // YYYY-MM-DD format
@@ -35,6 +35,10 @@ struct DailyUsage: Identifiable {
 	var modelsUsed: Set<String> = []
 	var modelBreakdowns: [ModelBreakdown] = []
 	var project: String?
+	
+	static func == (lhs: DailyUsage, rhs: DailyUsage) -> Bool {
+		lhs.id == rhs.id
+	}
 	
 	var totalTokens: Int {
 		inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens
@@ -56,7 +60,7 @@ struct DailyUsage: Identifiable {
 }
 
 // MARK: - Model Breakdown
-struct ModelBreakdown: Identifiable {
+struct ModelBreakdown: Identifiable, Equatable {
 	let id = UUID()
 	let modelName: String
 	var inputTokens: Int = 0
@@ -64,6 +68,10 @@ struct ModelBreakdown: Identifiable {
 	var cacheCreationTokens: Int = 0
 	var cacheReadTokens: Int = 0
 	var cost: Double = 0
+	
+	static func == (lhs: ModelBreakdown, rhs: ModelBreakdown) -> Bool {
+		lhs.id == rhs.id
+	}
 	
 	var totalTokens: Int {
 		inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens

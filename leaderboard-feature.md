@@ -352,6 +352,108 @@ func getOrCreateDeviceId() -> String {
 4. **Input Validation**: Strict validation on all inputs
 5. **No PII**: Don't collect personal information
 
+## Current Implementation Status
+
+### ✅ Backend - COMPLETED
+All backend endpoints are fully implemented:
+- ✅ POST /api/v1/users/register - User registration with device ID
+- ✅ POST /api/v1/usage/upload - Bulk upload of daily usage data with UPSERT logic
+- ✅ GET /api/v1/leaderboard - Leaderboard with filtering by metric/period
+- ✅ GET /api/v1/users/:username/sync-status - Sync status for efficient uploads
+- ✅ GET /api/v1/users/:username/stats - User statistics and rankings
+- ✅ Database schema with proper indexes
+- ✅ Data validation and error handling
+- ✅ Aggregate totals tracking in users table
+
+### ⚠️ Mac App - PARTIALLY COMPLETED
+
+#### ✅ Completed:
+- ✅ LeaderboardService with all API methods
+- ✅ Join leaderboard flow UI
+- ✅ Leaderboard display with filtering
+- ✅ Device ID generation and persistence
+- ✅ Basic sync method (`syncUsageData`)
+
+#### ❌ Missing Features:
+1. **Automatic Data Upload on Join**: When user joins leaderboard, need to automatically upload all historical usage data
+2. **Background Sync**: No automatic/periodic sync of new usage data
+3. **Sync Status Integration**: Not using sync-status endpoint to determine what data needs uploading
+4. **Upload Progress UI**: No visual feedback during data upload
+5. **Error Recovery**: No retry mechanism for failed uploads
+6. **Settings Integration**: No settings UI for leaving leaderboard or managing sync preferences
+
+## Remaining Implementation Tasks
+
+### 1. Implement Initial Data Upload (HIGH PRIORITY)
+When user joins leaderboard, automatically:
+- Load all historical usage data from local storage
+- Call `syncUsageData` with all available data
+- Show progress indicator during upload
+- Handle errors gracefully
+
+### 2. Implement Smart Sync Strategy (HIGH PRIORITY)
+```swift
+func performSmartSync() async throws {
+    // 1. Get sync status from backend
+    let syncStatus = try await getSyncStatus()
+    
+    // 2. Load local usage data
+    let allData = UsageDataLoader.shared.loadAllUsageData()
+    
+    // 3. Filter data that needs uploading
+    let dataToUpload = allData.filter { usage in
+        if let lastSync = syncStatus?.lastSyncDate {
+            return usage.date > lastSync || usage.date == today
+        }
+        return true
+    }
+    
+    // 4. Upload filtered data
+    if !dataToUpload.isEmpty {
+        try await syncUsageData(dataToUpload)
+    }
+}
+```
+
+### 3. Add Background Sync (MEDIUM PRIORITY)
+- Sync on app launch if joined
+- Sync when returning to foreground
+- Optional: Periodic sync timer while app is running
+- Store pending uploads for retry
+
+### 4. Integrate with DailyUsageView (HIGH PRIORITY)
+- Add sync trigger when new data is available
+- Show sync status in UI
+- Add manual sync button
+
+### 5. Add Settings UI (LOW PRIORITY)
+- Toggle to enable/disable leaderboard participation
+- Button to leave leaderboard
+- Sync frequency preferences
+- Data deletion option
+
+### 6. Error Handling & Recovery (MEDIUM PRIORITY)
+- Implement retry queue for failed uploads
+- Show user-friendly error messages
+- Offline detection and queuing
+
+## Implementation Priority Order
+
+1. **Immediate (Week 1)**:
+   - Initial data upload on join
+   - Smart sync implementation
+   - Integration with DailyUsageView
+
+2. **Soon (Week 2)**:
+   - Background sync triggers
+   - Error handling and retry logic
+   - Upload progress UI
+
+3. **Later (Week 3+)**:
+   - Settings UI
+   - Advanced sync optimizations
+   - Performance improvements
+
 ## Future Enhancements
 
 1. **Achievements/Badges**: Milestone rewards

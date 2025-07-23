@@ -3,6 +3,8 @@ import Combine
 import AppKit
 
 class UsageDataLoader: ObservableObject {
+	static let shared = UsageDataLoader()
+	
 	@Published var dailyUsage: [DailyUsage] = []
 	@Published var isLoading = false
 	@Published var error: Error?

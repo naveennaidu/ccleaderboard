@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var leaderboardService = LeaderboardService()
+    @EnvironmentObject var leaderboardService: LeaderboardService
     
     var body: some View {
         TabView {
@@ -16,6 +16,7 @@ struct ContentView: View {
                 .tabItem {
                     Label("Usage", systemImage: "chart.bar.fill")
                 }
+                .environmentObject(leaderboardService)
             
             LeaderboardView()
                 .tabItem {
@@ -28,4 +29,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environmentObject(LeaderboardService())
 }

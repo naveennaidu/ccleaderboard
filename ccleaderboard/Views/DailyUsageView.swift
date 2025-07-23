@@ -1,10 +1,13 @@
 import SwiftUI
 
 struct DailyUsageView: View {
-    @StateObject private var dataLoader = UsageDataLoader()
+    @StateObject private var dataLoader = UsageDataLoader.shared
+    @EnvironmentObject var leaderboardService: LeaderboardService
     @State private var selectedProject: String? = nil
     @State private var showProjectFilter = false
     @State private var hoveredRow: UUID? = nil
+    @State private var isSyncing = false
+    @State private var lastSyncTime: Date?
     
     private let currencyFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -34,6 +37,13 @@ struct DailyUsageView: View {
         .onAppear {
             dataLoader.loadDailyUsage()
         }
+        .onChange(of: dataLoader.dailyUsage) { newUsage in
+            // Auto-sync when data changes if user is joined
+            if leaderboardService.isJoined && !newUsage.isEmpty && !isSyncing {
+                print("[DailyUsageView] Data changed, triggering auto-sync. Data count: \(newUsage.count)")
+                performSync()
+            }
+        }
     }
     
     @ViewBuilder
@@ -49,7 +59,14 @@ struct DailyUsageView: View {
                     }
                 }
                 Spacer()
-                refreshButton
+                
+                // Sync button and refresh button
+                HStack(spacing: 12) {
+                    if leaderboardService.isJoined {
+                        syncButton
+                    }
+                    refreshButton
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 24)
@@ -78,6 +95,27 @@ struct DailyUsageView: View {
         }
     }
     
+    private var syncButton: some View {
+        Button(action: performSync) {
+            HStack(spacing: 4) {
+                if isSyncing {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "icloud.and.arrow.up")
+                        .font(.system(size: 16))
+                }
+                Text(isSyncing ? "Syncing..." : "Sync")
+                    .font(.caption)
+            }
+            .foregroundColor(isSyncing ? .secondary : .accentColor)
+        }
+        .buttonStyle(.plain)
+        .disabled(isSyncing || dataLoader.isLoading)
+        .help(lastSyncTime != nil ? "Last synced: \(lastSyncTime!.formatted())" : "Sync usage data to leaderboard")
+    }
+    
     private var refreshButton: some View {
         Button(action: { dataLoader.loadDailyUsage() }) {
             Image(systemName: "arrow.clockwise")
@@ -85,6 +123,38 @@ struct DailyUsageView: View {
                 .foregroundColor(.secondary)
         }
         .buttonStyle(.plain)
+        .disabled(dataLoader.isLoading)
+        .help("Refresh usage data")
+    }
+    
+    private func performSync() {
+        Task {
+            print("[DailyUsageView] Starting sync process...")
+            isSyncing = true
+            do {
+                // First ensure data is loaded
+                if dataLoader.dailyUsage.isEmpty {
+                    print("[DailyUsageView] No data loaded, loading now...")
+                    dataLoader.loadDailyUsage()
+                    
+                    // Wait for data to load
+                    var attempts = 0
+                    while dataLoader.isLoading && attempts < 30 {
+                        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        attempts += 1
+                    }
+                    print("[DailyUsageView] Data loading wait completed after \(attempts) attempts")
+                }
+                
+                print("[DailyUsageView] Calling performSmartSync...")
+                try await leaderboardService.performSmartSync()
+                lastSyncTime = Date()
+                print("[DailyUsageView] Sync completed successfully at \(lastSyncTime!)")
+            } catch {
+                print("[DailyUsageView] Sync failed: \(error.localizedDescription)")
+            }
+            isSyncing = false
+        }
     }
     
     @ViewBuilder

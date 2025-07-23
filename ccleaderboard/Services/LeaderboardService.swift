@@ -8,7 +8,8 @@ class LeaderboardService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     
-    private let baseURL = "http://localhost:8787/api/v1"
+    // TODO: Replace with your actual Cloudflare Workers URL
+    private let baseURL = "http://localhost:8787/api/v1" // Change this to your deployed backend URL
     private let userDefaults = UserDefaults.standard
     
     private let usernameKey = "leaderboardUsername"
@@ -89,12 +90,23 @@ class LeaderboardService: ObservableObject {
             throw LeaderboardError.invalidURL
         }
         
-        let (data, _) = try await URLSession.shared.data(from: url)
-        return try JSONDecoder().decode(SyncStatusResponse.self, from: data)
+        print("[SYNC] Getting sync status from: \(url)")
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            print("[SYNC] Sync status response code: \(httpResponse.statusCode)")
+        }
+        
+        let syncStatus = try JSONDecoder().decode(SyncStatusResponse.self, from: data)
+        print("[SYNC] Last sync date from server: \(syncStatus.lastSyncDate ?? "never")")
+        return syncStatus
     }
     
     func syncUsageData(_ dailyUsage: [DailyUsage]) async throws {
         guard let username = username else { return }
+        
+        let startTime = Date()
+        print("[SYNC] Starting sync of \(dailyUsage.count) days of data...")
         
         await MainActor.run {
             self.isLoading = true
@@ -102,6 +114,8 @@ class LeaderboardService: ObservableObject {
         defer { 
             Task { @MainActor in
                 self.isLoading = false
+                let duration = Date().timeIntervalSince(startTime)
+                print("[SYNC] Total sync duration: \(String(format: "%.2f", duration)) seconds")
             }
         }
         
@@ -127,20 +141,42 @@ class LeaderboardService: ObservableObject {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try JSONEncoder().encode(request)
         
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        print("[SYNC] Sending POST request to: \(url)")
+        print("[SYNC] Payload size: \(urlRequest.httpBody?.count ?? 0) bytes")
+        print("[SYNC] Number of days in payload: \(uploadData.count)")
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
+        let requestStartTime = Date()
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        let requestDuration = Date().timeIntervalSince(requestStartTime)
+        print("[SYNC] Request completed in \(String(format: "%.2f", requestDuration)) seconds")
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("[SYNC] ERROR: Invalid response type")
+            throw LeaderboardError.invalidResponse
+        }
+        
+        print("[SYNC] Response status code: \(httpResponse.statusCode)")
+        print("[SYNC] Response size: \(data.count) bytes")
+        
+        guard httpResponse.statusCode == 200 else {
+            print("[SYNC] ERROR: Upload failed with status \(httpResponse.statusCode)")
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("[SYNC] Error response: \(errorString)")
+            }
             throw LeaderboardError.uploadFailed
         }
         
         let uploadResponse = try JSONDecoder().decode(UploadResponse.self, from: data)
         
         if uploadResponse.success {
-            // Update last sync date
-            if let lastDate = dailyUsage.last?.date {
-                userDefaults.set(lastDate, forKey: lastSyncDateKey)
+            print("[SYNC] Upload successful! Uploaded: \(uploadResponse.uploaded), Skipped: \(uploadResponse.skipped)")
+            // Update last sync date to the newest date (first in the array since it's sorted descending)
+            if let newestDate = dailyUsage.first?.date {
+                userDefaults.set(newestDate, forKey: lastSyncDateKey)
+                print("[SYNC] Updated last sync date to: \(newestDate)")
             }
+        } else {
+            print("[SYNC] Upload failed: \(uploadResponse.errors?.joined(separator: ", ") ?? "Unknown error")")
         }
     }
     
@@ -171,6 +207,152 @@ class LeaderboardService: ObservableObject {
         
         let (data, _) = try await URLSession.shared.data(from: url)
         return try JSONDecoder().decode(UserStatsResponse.self, from: data)
+    }
+    
+    // MARK: - Smart Sync Methods
+    
+    func performSmartSync() async throws {
+        guard let username = username else {
+            throw LeaderboardError.notJoined
+        }
+        
+        await MainActor.run {
+            self.isLoading = true
+            self.errorMessage = nil
+        }
+        defer {
+            Task { @MainActor in
+                self.isLoading = false
+            }
+        }
+        
+        // 1. Get sync status from backend
+        let syncStatus = try await getSyncStatus()
+        
+        // 2. Load local usage data
+        let dataLoader = UsageDataLoader.shared
+        await MainActor.run {
+            // Ensure data is loaded
+            if dataLoader.dailyUsage.isEmpty && dataLoader.selectedDirectory != nil {
+                dataLoader.loadDailyUsage()
+            }
+        }
+        
+        // Wait for data to load if needed
+        var attempts = 0
+        while dataLoader.isLoading && attempts < 30 {
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            attempts += 1
+        }
+        
+        guard !dataLoader.dailyUsage.isEmpty else {
+            print("No usage data available to sync")
+            return
+        }
+        
+        // 3. Filter data that needs uploading
+        let allData = dataLoader.dailyUsage
+        print("[SYNC] Total local data available: \(allData.count) days")
+        if let firstDate = allData.first?.date, let lastDate = allData.last?.date {
+            print("[SYNC] Date range: \(firstDate) to \(lastDate)")
+        }
+        
+        let dataToUpload: [DailyUsage]
+        
+        if let lastSyncDateString = syncStatus?.lastSyncDate {
+            // Try parsing as ISO8601 first, then try as simple date format
+            var lastSyncDate: Date?
+            
+            // Try ISO8601 format first
+            lastSyncDate = ISO8601DateFormatter().date(from: lastSyncDateString)
+            
+            // If that fails, try simple date format (YYYY-MM-DD)
+            if lastSyncDate == nil {
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                dateFormatter.timeZone = TimeZone(abbreviation: "UTC")
+                lastSyncDate = dateFormatter.date(from: lastSyncDateString)
+            }
+            
+            guard let syncDate = lastSyncDate else {
+                print("[SYNC] ERROR: Unable to parse last sync date: \(lastSyncDateString)")
+                dataToUpload = allData
+                print("[SYNC] Falling back to uploading all \(dataToUpload.count) days of data")
+                return
+            }
+            // Upload data newer than last sync, plus today's data (in case it was updated)
+            let today = Calendar.current.startOfDay(for: Date())
+            
+            print("[SYNC] Last sync date from server: \(lastSyncDateString) (\(syncDate))")
+            print("[SYNC] Today's date: \(today)")
+            
+            dataToUpload = allData.filter { usage in
+                let isNewer = usage.date > syncDate
+                let isToday = Calendar.current.isDate(usage.date, inSameDayAs: today)
+                let shouldUpload = isNewer || isToday
+                
+                if shouldUpload {
+                    print("[SYNC] Will upload: \(usage.dateString) (newer: \(isNewer), today: \(isToday))")
+                }
+                
+                return shouldUpload
+            }
+            print("[SYNC] Smart sync: Found \(dataToUpload.count) days to upload (newer than \(lastSyncDateString))")
+        } else {
+            // First sync - upload all data
+            dataToUpload = allData
+            print("[SYNC] Initial sync: Uploading all \(dataToUpload.count) days of data")
+        }
+        
+        // 4. Upload filtered data
+        if !dataToUpload.isEmpty {
+            try await syncUsageData(dataToUpload)
+            print("Successfully synced \(dataToUpload.count) days of usage data")
+        } else {
+            print("No new data to sync")
+        }
+    }
+    
+    func performInitialSync() async throws {
+        guard username != nil else {
+            throw LeaderboardError.notJoined
+        }
+        
+        await MainActor.run {
+            self.isLoading = true
+            self.errorMessage = nil
+        }
+        defer {
+            Task { @MainActor in
+                self.isLoading = false
+            }
+        }
+        
+        // Load all usage data
+        let dataLoader = UsageDataLoader.shared
+        await MainActor.run {
+            if dataLoader.selectedDirectory != nil {
+                dataLoader.loadDailyUsage()
+            }
+        }
+        
+        // Wait for data to load
+        var attempts = 0
+        while dataLoader.isLoading && attempts < 30 {
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            attempts += 1
+        }
+        
+        guard !dataLoader.dailyUsage.isEmpty else {
+            print("No usage data available for initial sync")
+            return
+        }
+        
+        // Upload all data
+        let allData = dataLoader.dailyUsage
+        print("Performing initial sync with \(allData.count) days of data")
+        try await syncUsageData(allData)
+        print("Initial sync completed successfully")
     }
     
     // MARK: - Leave Leaderboard

@@ -14,7 +14,7 @@ const app = new Hono<{ Bindings: CloudflareBindings }>();
 app.use("*", logger());
 app.use("*", timing());
 app.use("*", corsMiddleware());
-app.use("/api/*", rateLimitMiddleware);
+// app.use("/api/*", rateLimitMiddleware);
 
 // Health check
 app.get("/", (c) => {
