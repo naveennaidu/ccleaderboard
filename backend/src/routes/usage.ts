@@ -54,12 +54,6 @@ app.post('/upload', async (c) => {
     let skipped = 0;
     const errors: string[] = [];
     
-    let totalRequests = userData.totalRequests || 0;
-    let totalInputTokens = userData.totalInputTokens || 0;
-    let totalOutputTokens = userData.totalOutputTokens || 0;
-    let totalCost = userData.totalCost || 0;
-    let latestDate = userData.lastSyncDate || '';
-    
     for (const entry of body.dailyUsage) {
       try {
         const existingEntry = await db.select()
@@ -74,11 +68,6 @@ app.post('/upload', async (c) => {
           const existing = existingEntry[0];
           
           if (entry.totalRequests >= existing.totalRequests) {
-            const deltaRequests = entry.totalRequests - existing.totalRequests;
-            const deltaInputTokens = entry.totalInputTokens - existing.totalInputTokens;
-            const deltaOutputTokens = entry.totalOutputTokens - existing.totalOutputTokens;
-            const deltaCost = entry.totalCost - existing.totalCost;
-            
             await db.update(dailyUsage)
               .set({
                 totalRequests: entry.totalRequests,
@@ -88,11 +77,6 @@ app.post('/upload', async (c) => {
                 updatedAt: new Date().toISOString()
               })
               .where(eq(dailyUsage.id, existing.id));
-            
-            totalRequests += deltaRequests;
-            totalInputTokens += deltaInputTokens;
-            totalOutputTokens += deltaOutputTokens;
-            totalCost += deltaCost;
             
             uploaded++;
           } else {
@@ -111,34 +95,36 @@ app.post('/upload', async (c) => {
           };
           
           await db.insert(dailyUsage).values(newEntry);
-          
-          totalRequests += entry.totalRequests;
-          totalInputTokens += entry.totalInputTokens;
-          totalOutputTokens += entry.totalOutputTokens;
-          totalCost += entry.totalCost;
-          
           uploaded++;
         }
-        
-        if (entry.date > latestDate) {
-          latestDate = entry.date;
-        }
-        
       } catch (error) {
         errors.push(`Failed to process entry for ${entry.date}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }
     
+    // Recalculate totals from all daily usage records
+    const totals = await db.select({
+      totalRequests: sql<number>`sum(${dailyUsage.totalRequests})`,
+      totalInputTokens: sql<number>`sum(${dailyUsage.totalInputTokens})`,
+      totalOutputTokens: sql<number>`sum(${dailyUsage.totalOutputTokens})`,
+      totalCost: sql<number>`sum(${dailyUsage.totalCost})`,
+      lastSyncDate: sql<string>`max(${dailyUsage.date})`
+    })
+      .from(dailyUsage)
+      .where(eq(dailyUsage.userId, userId));
+    
+    const aggregated = totals[0];
+    
     await db.update(users)
       .set({
-        totalRequests,
-        totalInputTokens,
-        totalOutputTokens,
-        totalCost,
-        lastSyncDate: latestDate,
+        totalRequests: aggregated?.totalRequests || 0,
+        totalInputTokens: aggregated?.totalInputTokens || 0,
+        totalOutputTokens: aggregated?.totalOutputTokens || 0,
+        totalCost: aggregated?.totalCost || 0,
+        lastSyncDate: aggregated?.lastSyncDate || null,
         lastUploadAt: new Date().toISOString()
       })
-      .where(eq(users.id, userData.id));
+      .where(eq(users.id, userId));
     
     return c.json<UploadResponse>({
       success: true,
