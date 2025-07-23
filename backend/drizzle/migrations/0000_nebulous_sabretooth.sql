@@ -1,6 +1,6 @@
 CREATE TABLE `daily_usage` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-	`user_id` text NOT NULL,
+	`user_id` integer NOT NULL,
 	`date` text NOT NULL,
 	`total_requests` integer NOT NULL,
 	`total_input_tokens` integer NOT NULL,

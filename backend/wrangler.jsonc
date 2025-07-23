@@ -9,7 +9,17 @@
       "binding": "DB",
       "database_name": "ccleaderboard",
       "database_id": "2d0902ba-5661-4edf-9db9-0c8cdaa9d285",
+      "preview_database_id": "4e6bd4a9-a6ae-4612-80c4-7bd08feca00c",
       "migrations_dir": "drizzle/migrations",
+      "experimental_remote": true,
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "902b69bf23e243a58bb714f4ce571b68",
+      "preview_id": "9153a14f4e444d06af5099880c5be00b",
+      "experimental_remote": true,
     },
   ],
 }

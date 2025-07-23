@@ -34,7 +34,7 @@ export const dailyUsage = sqliteTable(
   "daily_usage",
   {
     id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
-    userId: text("user_id")
+    userId: integer("user_id")
       .notNull()
       .references(() => users.id),
     date: text("date").notNull(),
