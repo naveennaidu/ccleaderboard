@@ -8,8 +8,21 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var leaderboardService = LeaderboardService()
+    
     var body: some View {
-        DailyUsageView()
+        TabView {
+            DailyUsageView()
+                .tabItem {
+                    Label("Usage", systemImage: "chart.bar.fill")
+                }
+            
+            LeaderboardView()
+                .tabItem {
+                    Label("Leaderboard", systemImage: "chart.line.uptrend.xyaxis")
+                }
+                .environmentObject(leaderboardService)
+        }
     }
 }
 
