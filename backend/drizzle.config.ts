@@ -1,13 +1,17 @@
-import type { Config } from "drizzle-kit";
+import { defineConfig } from "drizzle-kit";
+import * as dotenv from "dotenv";
 
-export default {
+// Load environment variables from .dev.vars
+dotenv.config({ path: ".dev.vars" });
+
+export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle/migrations",
   dialect: "sqlite",
   driver: "d1-http",
   dbCredentials: {
-    accountId: "972c5fb5dd57c85bbd9093c792f56a17",
-    databaseId: "2d0902ba-5661-4edf-9db9-0c8cdaa9d285",
-    token: "3SDIrTkt80qXVx7fN0qKUEb_7-EUBKVE1tJBLGg5",
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+    databaseId: process.env.CLOUDFLARE_DATABASE_ID!,
+    token: process.env.CLOUDFLARE_D1_TOKEN!,
   },
-} satisfies Config;
+});

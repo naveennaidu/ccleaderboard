@@ -16,6 +16,8 @@
     "hono": "^4.8.5"
   },
   "devDependencies": {
+    "@types/node": "^24.1.0",
+    "dotenv": "^17.2.0",
     "drizzle-kit": "^0.31.4",
     "wrangler": "^4.4.0"
   }
