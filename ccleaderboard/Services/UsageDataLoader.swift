@@ -10,6 +10,8 @@ class UsageDataLoader: ObservableObject {
 	
 	private let fileManager = FileManager.default
 	private let jsonDecoder = JSONDecoder()
+	private let userDefaults = UserDefaults.standard
+	private let bookmarkKey = "com.ccleaderboard.selectedDirectoryBookmark"
 	private let dateFormatter: DateFormatter = {
 		let formatter = DateFormatter()
 		formatter.dateFormat = "yyyy-MM-dd"
@@ -28,6 +30,26 @@ class UsageDataLoader: ObservableObject {
 		formatter.formatOptions = [.withInternetDateTime]
 		return formatter
 	}()
+	
+	init() {
+		// Try to load saved directory on init
+		if let savedDirectory = loadDirectoryBookmark() {
+			self.selectedDirectory = savedDirectory
+			print("🚀 Auto-loading data from saved directory...")
+			// Load data in the background after a short delay to ensure UI is ready
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+				self?.loadDailyUsage()
+			}
+		}
+	}
+	
+	deinit {
+		// Stop accessing security-scoped resource
+		if let url = selectedDirectory {
+			url.stopAccessingSecurityScopedResource()
+			print("🔒 Stopped accessing security-scoped resource")
+		}
+	}
 	
 	// Get Claude data directories
 	private func getClaudePaths() -> [URL] {
@@ -140,6 +162,12 @@ class UsageDataLoader: ObservableObject {
 	
 	// Show directory picker
 	func selectDirectory() {
+		// Stop accessing current security-scoped resource if changing directories
+		if let currentURL = selectedDirectory {
+			currentURL.stopAccessingSecurityScopedResource()
+			print("🔒 Stopped accessing previous directory")
+		}
+		
 		let openPanel = NSOpenPanel()
 		openPanel.title = "Select Claude Data Directory"
 		openPanel.message = "Select your Claude config directory (usually ~/.config/claude or ~/.claude)"
@@ -155,10 +183,81 @@ class UsageDataLoader: ObservableObject {
 		if openPanel.runModal() == .OK {
 			selectedDirectory = openPanel.url
 			print("✅ User selected directory: \(openPanel.url?.path ?? "nil")")
+			
+			// Save bookmark for persistent access
+			if let url = openPanel.url {
+				saveDirectoryBookmark(url)
+			}
+			
 			loadDailyUsage()
 		} else {
 			print("❌ User cancelled directory selection")
 		}
+	}
+	
+	// Save directory bookmark for persistent access
+	private func saveDirectoryBookmark(_ url: URL) {
+		do {
+			let bookmarkData = try url.bookmarkData(
+				options: .withSecurityScope,
+				includingResourceValuesForKeys: nil,
+				relativeTo: nil
+			)
+			userDefaults.set(bookmarkData, forKey: bookmarkKey)
+			print("✅ Saved directory bookmark to UserDefaults")
+		} catch {
+			print("❌ Failed to save directory bookmark: \(error)")
+		}
+	}
+	
+	// Load directory from saved bookmark
+	private func loadDirectoryBookmark() -> URL? {
+		guard let bookmarkData = userDefaults.data(forKey: bookmarkKey) else {
+			print("ℹ️ No saved directory bookmark found")
+			return nil
+		}
+		
+		do {
+			var isStale = false
+			let url = try URL(
+				resolvingBookmarkData: bookmarkData,
+				options: .withSecurityScope,
+				relativeTo: nil,
+				bookmarkDataIsStale: &isStale
+			)
+			
+			if isStale {
+				print("⚠️ Bookmark is stale, needs to be updated")
+				// User will need to reselect the directory
+				return nil
+			}
+			
+			// Start accessing the security-scoped resource
+			if url.startAccessingSecurityScopedResource() {
+				print("✅ Successfully loaded directory from bookmark: \(url.path)")
+				return url
+			} else {
+				print("❌ Failed to access security-scoped resource")
+				return nil
+			}
+		} catch {
+			print("❌ Failed to load directory bookmark: \(error)")
+			return nil
+		}
+	}
+	
+	// Clear saved directory bookmark
+	func clearSavedDirectory() {
+		// Stop accessing current security-scoped resource
+		if let url = selectedDirectory {
+			url.stopAccessingSecurityScopedResource()
+		}
+		
+		// Clear from UserDefaults
+		userDefaults.removeObject(forKey: bookmarkKey)
+		selectedDirectory = nil
+		dailyUsage = []
+		print("🗑️ Cleared saved directory bookmark")
 	}
 	
 	// Load and aggregate daily usage data

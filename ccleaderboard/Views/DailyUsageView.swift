@@ -25,15 +25,12 @@ struct DailyUsageView: View {
         VStack(spacing: 0) {
             headerView
             Divider()
+            Spacer()
             contentView
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
-        .sheet(isPresented: $showProjectFilter) {
-            ProjectFilterView(selectedProject: $selectedProject) {
-                dataLoader.loadDailyUsage(project: selectedProject)
-            }
-        }
         .onAppear {
             dataLoader.loadDailyUsage()
         }
