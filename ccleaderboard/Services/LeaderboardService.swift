@@ -8,8 +8,7 @@ class LeaderboardService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     
-    // TODO: Replace with your actual Cloudflare Workers URL
-    private let baseURL = "http://localhost:8787/api/v1" // Change this to your deployed backend URL
+    private let baseURL = "https://backend.naveen-972.workers.dev/api/v1"
     private let userDefaults = UserDefaults.standard
     
     private let usernameKey = "leaderboardUsername"

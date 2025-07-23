@@ -22,4 +22,9 @@
       "experimental_remote": true,
     },
   ],
+  "observability": {
+    "logs": {
+      "enabled": true,
+    },
+  },
 }

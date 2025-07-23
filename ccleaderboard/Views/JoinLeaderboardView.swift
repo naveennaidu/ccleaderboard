@@ -10,8 +10,6 @@ struct JoinLeaderboardView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var agreedToTerms = false
-    @State private var uploadProgress = ""
-    @State private var isUploading = false
     
     private var isValidUsername: Bool {
         let pattern = "^[a-zA-Z0-9_]{3,30}$"
@@ -106,28 +104,16 @@ struct JoinLeaderboardView: View {
             
             Spacer()
             
-            // Upload Progress
-            if isUploading && !uploadProgress.isEmpty {
-                VStack(spacing: 8) {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                    Text(uploadProgress)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-            }
-            
             // Action Buttons
             HStack(spacing: 16) {
                 Button("Cancel") {
                     dismiss()
                 }
                 .buttonStyle(.bordered)
-                .disabled(isJoining || isUploading)
+                .disabled(isJoining)
                 
                 Button(action: joinLeaderboard) {
-                    if isJoining || isUploading {
+                    if isJoining {
                         ProgressView()
                             .scaleEffect(0.8)
                     } else {
@@ -135,7 +121,7 @@ struct JoinLeaderboardView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!isValidUsername || !agreedToTerms || isJoining || isUploading)
+                .disabled(!isValidUsername || !agreedToTerms || isJoining)
             }
             .padding(.bottom)
         }
@@ -155,29 +141,7 @@ struct JoinLeaderboardView: View {
             do {
                 try await leaderboardService.joinLeaderboard(username: username)
                 
-                // Perform initial sync of all historical data
-                await MainActor.run {
-                    isUploading = true
-                    uploadProgress = "Uploading usage history..."
-                }
-                
-                do {
-                    try await leaderboardService.performInitialSync()
-                    await MainActor.run {
-                        uploadProgress = "Upload complete!"
-                    }
-                } catch {
-                    print("Initial sync failed: \(error.localizedDescription)")
-                    // Don't fail the join process if sync fails
-                    // User can manually sync later
-                    await MainActor.run {
-                        uploadProgress = "Upload failed, you can sync later"
-                    }
-                }
-                
-                // Brief delay to show completion message
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                
+                // Just close the sheet - the LeaderboardView will handle the upload
                 await MainActor.run {
                     dismiss()
                 }

@@ -9,6 +9,8 @@ struct LeaderboardView: View {
     @State private var userStats: UserStatsResponse?
     @State private var isLoading = false
     @State private var lastRefresh = Date()
+    @State private var isUploadingInitialData = false
+    @State private var uploadProgress = ""
     
     var body: some View {
         VStack {
@@ -28,6 +30,15 @@ struct LeaderboardView: View {
         .sheet(isPresented: $showJoinSheet) {
             JoinLeaderboardView()
                 .environmentObject(leaderboardService)
+                .onDisappear {
+                    // When the join sheet closes after successful registration,
+                    // start the upload process
+                    if leaderboardService.isJoined && leaderboardData == nil {
+                        Task {
+                            await performInitialDataUpload()
+                        }
+                    }
+                }
         }
     }
     
@@ -83,7 +94,7 @@ struct LeaderboardView: View {
                     Button(action: { Task { await loadLeaderboard() } }) {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .disabled(isLoading)
+                    .disabled(isLoading || isUploadingInitialData)
                 }
                 
             }
@@ -91,8 +102,30 @@ struct LeaderboardView: View {
             
             Divider()
             
-            // Leaderboard table
-            if isLoading && leaderboardData == nil {
+            // Show uploading state if initial data is being uploaded
+            if isUploadingInitialData {
+                Spacer()
+                VStack(spacing: 20) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                    
+                    Text("Uploading your usage data")
+                        .font(.headline)
+                    
+                    Text("We're bringing all your local usage data to Claude.\nThis will take a few moments...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    if !uploadProgress.isEmpty {
+                        Text(uploadProgress)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding()
+                Spacer()
+            } else if isLoading && leaderboardData == nil {
                 Spacer()
                 ProgressView("Loading leaderboard...")
                 Spacer()
@@ -133,6 +166,40 @@ struct LeaderboardView: View {
             print("Failed to load leaderboard: \(error)")
         }
         isLoading = false
+    }
+    
+    private func performInitialDataUpload() async {
+        await MainActor.run {
+            isUploadingInitialData = true
+            uploadProgress = "Preparing your usage history..."
+        }
+        
+        do {
+            // Perform the initial sync
+            try await leaderboardService.performInitialSync()
+            
+            await MainActor.run {
+                uploadProgress = "Upload complete! Loading leaderboard..."
+            }
+            
+            // Brief delay to show completion message
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            
+            // Load the leaderboard with fresh data
+            await loadLeaderboard()
+            
+            await MainActor.run {
+                isUploadingInitialData = false
+                uploadProgress = ""
+            }
+        } catch {
+            await MainActor.run {
+                isUploadingInitialData = false
+                uploadProgress = ""
+                // Handle error if needed
+                print("Initial upload failed: \(error)")
+            }
+        }
     }
 }
 
