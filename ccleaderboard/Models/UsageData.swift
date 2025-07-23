@@ -47,7 +47,7 @@ struct DailyUsage: Identifiable {
 		cacheReadTokens += entry.message.usage.cache_read_input_tokens ?? 0
 		totalCost += cost
 		
-		if let model = entry.message.model {
+		if let model = entry.message.model, model != "<synthetic>" {
 			modelsUsed.insert(model)
 		}
 		
