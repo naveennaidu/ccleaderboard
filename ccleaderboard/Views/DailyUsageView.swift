@@ -4,132 +4,31 @@ struct DailyUsageView: View {
     @StateObject private var dataLoader = UsageDataLoader()
     @State private var selectedProject: String? = nil
     @State private var showProjectFilter = false
-	
+    @State private var hoveredRow: UUID? = nil
+    
     private let currencyFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = "USD"
-        formatter.maximumFractionDigits = 4
+        formatter.maximumFractionDigits = 2
         return formatter
     }()
-	
+    
     private let tokenFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         return formatter
     }()
-	
+    
     var body: some View {
-        VStack {
-            // Show selected directory path
-            if let selectedDir = dataLoader.selectedDirectory {
-                HStack {
-                    Image(systemName: "folder")
-                        .foregroundColor(.secondary)
-                    Text(selectedDir.path)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Button("Change") {
-                        dataLoader.selectDirectory()
-                    }
-                    .buttonStyle(.link)
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-            }
-				
-            if dataLoader.isLoading {
-                ProgressView("Loading usage data...")
-                    .padding()
-            } else if let error = dataLoader.error {
-                VStack {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundColor(.red)
-                    Text("Error loading data")
-                        .font(.headline)
-                    Text(error.localizedDescription)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-            } else if dataLoader.dailyUsage.isEmpty && dataLoader.selectedDirectory == nil {
-                VStack {
-                    Image(systemName: "folder.badge.questionmark")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("Select Claude Data Directory")
-                        .font(.headline)
-                    Text("Click the button below to select your Claude config directory\n(usually ~/.config/claude or ~/.claude)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-						
-                    Button("Select Directory") {
-                        dataLoader.selectDirectory()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top)
-                }
-                .padding()
-            } else if dataLoader.dailyUsage.isEmpty {
-                VStack {
-                    Image(systemName: "chart.bar.doc.horizontal")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("No usage data found")
-                        .font(.headline)
-                    Text("Make sure the selected directory contains Claude usage data")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-						
-                    Button("Select Different Directory") {
-                        dataLoader.selectDirectory()
-                    }
-                    .buttonStyle(.bordered)
-                    .padding(.top)
-                }
-                .padding()
-            } else {
-                List {
-                    // Total summary section
-                    Section("Summary") {
-                        SummaryRow(dailyUsage: dataLoader.dailyUsage)
-                    }
-						
-                    // Daily usage rows
-                    Section("Daily Usage") {
-                        ForEach(dataLoader.dailyUsage) { daily in
-                            DailyUsageRow(
-                                daily: daily,
-                                tokenFormatter: tokenFormatter,
-                                currencyFormatter: currencyFormatter
-                            )
-                        }
-                    }
-                }
-            }
+        VStack(spacing: 0) {
+            headerView
+            Divider()
+            contentView
         }
-        //		.navigationTitle("Claude Usage")
-        //		.toolbar {
-        //			ToolbarItem(placement: .navigation) {
-        //				Button(action: { dataLoader.loadDailyUsage() }) {
-        //					Image(systemName: "arrow.clockwise")
-        //				}
-        //			}
-//
-        //			ToolbarItem(placement: .navigation) {
-        //				Button(action: { showProjectFilter.toggle() }) {
-        //					Image(systemName: "line.horizontal.3.decrease.circle")
-        //				}
-        //			}
-        //		}
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
         .sheet(isPresented: $showProjectFilter) {
             ProjectFilterView(selectedProject: $selectedProject) {
                 dataLoader.loadDailyUsage(project: selectedProject)
@@ -139,189 +38,224 @@ struct DailyUsageView: View {
             dataLoader.loadDailyUsage()
         }
     }
-}
-
-struct DailyUsageRow: View {
-    let daily: DailyUsage
-    let tokenFormatter: NumberFormatter
-    let currencyFormatter: NumberFormatter
-    @State private var isExpanded = false
-	
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Main row
+    
+    @ViewBuilder
+    private var headerView: some View {
+        VStack(spacing: 12) {
             HStack {
-                VStack(alignment: .leading) {
-                    Text(daily.dateString)
-                        .font(.headline)
-                    if let project = daily.project {
-                        Text(project)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-				
-                Spacer()
-				
-                VStack(alignment: .trailing) {
-                    Text(currencyFormatter.string(from: NSNumber(value: daily.totalCost)) ?? "$0.00")
-                        .font(.headline)
-                        .foregroundColor(.blue)
-                    Text("\(tokenFormatter.string(from: NSNumber(value: daily.totalTokens)) ?? "0") tokens")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-			
-            // Expandable details
-            if isExpanded {
-                Divider()
-				
                 VStack(alignment: .leading, spacing: 4) {
-                    TokenRow(label: "Input", value: daily.inputTokens, formatter: tokenFormatter)
-                    TokenRow(label: "Output", value: daily.outputTokens, formatter: tokenFormatter)
-                    if daily.cacheCreationTokens > 0 {
-                        TokenRow(label: "Cache Create", value: daily.cacheCreationTokens, formatter: tokenFormatter)
-                    }
-                    if daily.cacheReadTokens > 0 {
-                        TokenRow(label: "Cache Read", value: daily.cacheReadTokens, formatter: tokenFormatter)
-                    }
-					
-                    if !daily.modelsUsed.isEmpty {
-                        Divider()
-                        Text("Models: \(daily.modelsUsed.joined(separator: ", "))")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    Text("Claude Usage")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    if let selectedDir = dataLoader.selectedDirectory {
+                        directoryInfoView(selectedDir: selectedDir)
                     }
                 }
-                .padding(.vertical, 4)
+                Spacer()
+                refreshButton
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 12)
         }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isExpanded.toggle()
-            }
-        }
+        .background(Color(NSColor.controlBackgroundColor))
     }
-}
-
-struct TokenRow: View {
-    let label: String
-    let value: Int
-    let formatter: NumberFormatter
-	
-    var body: some View {
-        HStack {
-            Text(label)
+    
+    @ViewBuilder
+    private func directoryInfoView(selectedDir: URL) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "folder.fill")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            Spacer()
-            Text(formatter.string(from: NSNumber(value: value)) ?? "0")
-                .font(.caption.monospacedDigit())
+            Text(selectedDir.path)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Button(action: { dataLoader.selectDirectory() }) {
+                Text("Change")
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
+            }
+            .buttonStyle(.plain)
         }
     }
-}
-
-struct SummaryRow: View {
-    let dailyUsage: [DailyUsage]
-	
-    private var totalCost: Double {
-        dailyUsage.reduce(0) { $0 + $1.totalCost }
+    
+    private var refreshButton: some View {
+        Button(action: { dataLoader.loadDailyUsage() }) {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 16))
+                .foregroundColor(.secondary)
+        }
+        .buttonStyle(.plain)
     }
-	
-    private var totalTokens: Int {
-        dailyUsage.reduce(0) { $0 + $1.totalTokens }
+    
+    @ViewBuilder
+    private var contentView: some View {
+        if dataLoader.isLoading {
+            loadingView
+        } else if let error = dataLoader.error {
+            errorView(error: error)
+        } else if dataLoader.dailyUsage.isEmpty && dataLoader.selectedDirectory == nil {
+            noDirectoryView
+        } else if dataLoader.dailyUsage.isEmpty {
+            emptyDataView
+        } else {
+            usageDataView
+        }
     }
-	
-    private let currencyFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.maximumFractionDigits = 2
-        return formatter
-    }()
-	
-    private let tokenFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        return formatter
-    }()
-	
-    var body: some View {
+    
+    private var loadingView: some View {
+        ProgressView("Loading usage data...")
+            .padding()
+    }
+    
+    private func errorView(error: Error) -> some View {
+        VStack {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.largeTitle)
+                .foregroundColor(.red)
+            Text("Error loading data")
+                .font(.headline)
+            Text(error.localizedDescription)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+    }
+    
+    private var noDirectoryView: some View {
+        VStack {
+            Image(systemName: "folder.badge.questionmark")
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            Text("Select Claude Data Directory")
+                .font(.headline)
+            Text("Click the button below to select your Claude config directory\n(usually ~/.config/claude or ~/.claude)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Button("Select Directory") {
+                dataLoader.selectDirectory()
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.top)
+        }
+        .padding()
+    }
+    
+    private var emptyDataView: some View {
+        VStack {
+            Image(systemName: "chart.bar.doc.horizontal")
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+            Text("No usage data found")
+                .font(.headline)
+            Text("Make sure the selected directory contains Claude usage data")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Button("Select Different Directory") {
+                dataLoader.selectDirectory()
+            }
+            .buttonStyle(.bordered)
+            .padding(.top)
+        }
+        .padding()
+    }
+    
+    private var usageDataView: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                SummaryCard(dailyUsage: dataLoader.dailyUsage)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                
+                usageTableView
+            }
+        }
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+    
+    private var usageTableView: some View {
+        VStack(spacing: 0) {
+            tableHeaderView
+            
+            Divider()
+            
+            tableRowsView
+        }
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
+    }
+    
+    private var tableHeaderView: some View {
         HStack {
-            VStack(alignment: .leading) {
-                Text("Total")
-                    .font(.headline)
-                Text("\(dailyUsage.count) days")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-			
-            Spacer()
-			
-            VStack(alignment: .trailing) {
-                Text(currencyFormatter.string(from: NSNumber(value: totalCost)) ?? "$0.00")
-                    .font(.headline)
-                    .foregroundColor(.green)
-                Text("\(tokenFormatter.string(from: NSNumber(value: totalTokens)) ?? "0") tokens")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            Text("Date")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            Text("Models")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            Text("Input")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .trailing)
+            
+            Text("Output")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .trailing)
+            
+            Text("Cost (USD)")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+                .frame(width: 120, alignment: .trailing)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
+    
+    @ViewBuilder
+    private var tableRowsView: some View {
+        ForEach(dataLoader.dailyUsage) { daily in
+            VStack(spacing: 0) {
+                DailyUsageTableRow(
+                    daily: daily,
+                    tokenFormatter: tokenFormatter,
+                    currencyFormatter: currencyFormatter,
+                    isHovered: hoveredRow == daily.id
+                )
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        hoveredRow = hovering ? daily.id : nil
+                    }
+                }
+                
+                if daily.id != dataLoader.dailyUsage.last?.id {
+                    Divider()
+                        .padding(.horizontal, 24)
+                }
             }
         }
-        .padding(.vertical, 4)
     }
 }
 
-struct ProjectFilterView: View {
-    @Binding var selectedProject: String?
-    let onApply: () -> Void
-    @Environment(\.dismiss) var dismiss
-	
-    // In a real app, you'd get this list from scanning available projects
-    let projects = ["All Projects", "project1", "project2", "project3"]
-	
-    var body: some View {
-        NavigationView {
-            List {
-                ForEach(projects, id: \.self) { project in
-                    HStack {
-                        Text(project)
-                        Spacer()
-                        if (project == "All Projects" && selectedProject == nil) ||
-                            (project == selectedProject)
-                        {
-                            Image(systemName: "checkmark")
-                                .foregroundColor(.blue)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if project == "All Projects" {
-                            selectedProject = nil
-                        } else {
-                            selectedProject = project
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Filter by Project")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Apply") {
-                        onApply()
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
 
 #Preview {
     DailyUsageView()
