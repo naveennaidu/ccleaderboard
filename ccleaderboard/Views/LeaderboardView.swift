@@ -3,7 +3,7 @@ import SwiftUI
 struct LeaderboardView: View {
     @EnvironmentObject var leaderboardService: LeaderboardService
     @State private var showJoinSheet = false
-    @State private var selectedMetric: LeaderboardMetric = .requests
+    @State private var selectedMetric: LeaderboardMetric = .cost
     @State private var selectedPeriod: LeaderboardPeriod = .all
     @State private var leaderboardData: LeaderboardResponse?
     @State private var userStats: UserStatsResponse?
@@ -86,27 +86,6 @@ struct LeaderboardView: View {
                     .disabled(isLoading)
                 }
                 
-                // Period selector
-                Picker("Period", selection: $selectedPeriod) {
-                    ForEach(LeaderboardPeriod.allCases, id: \.self) { period in
-                        Text(period.displayName).tag(period)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: selectedPeriod) { _ in
-                    Task { await loadLeaderboard() }
-                }
-                
-                // Metric selector
-                Picker("Metric", selection: $selectedMetric) {
-                    ForEach(LeaderboardMetric.allCases, id: \.self) { metric in
-                        Text(metric.displayName).tag(metric)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: selectedMetric) { _ in
-                    Task { await loadLeaderboard() }
-                }
             }
             .padding()
             
@@ -125,7 +104,7 @@ struct LeaderboardView: View {
                         
                         // Data rows
                         ForEach(data.leaderboard) { entry in
-                            LeaderboardRow(entry: entry, metric: selectedMetric, currentUsername: leaderboardService.username)
+                            LeaderboardRow(entry: entry, currentUsername: leaderboardService.username)
                                 .background(entry.username == leaderboardService.username ? Color.accentColor.opacity(0.1) : Color.clear)
                         }
                     }
@@ -143,8 +122,8 @@ struct LeaderboardView: View {
         isLoading = true
         do {
             leaderboardData = try await leaderboardService.fetchLeaderboard(
-                metric: selectedMetric,
-                period: selectedPeriod
+                metric: .cost,
+                period: .all
             )
             
             if leaderboardService.isJoined {
@@ -182,18 +161,10 @@ struct LeaderboardHeaderRow: View {
 
 struct LeaderboardRow: View {
     let entry: LeaderboardEntry
-    let metric: LeaderboardMetric
     let currentUsername: String?
     
     private var displayValue: String {
-        switch metric {
-        case .requests:
-            return "\(entry.totalRequests)"
-        case .tokens:
-            return formatNumber(entry.totalTokens)
-        case .cost:
-            return String(format: "$%.2f", entry.totalCost)
-        }
+        String(format: "$%.2f", entry.totalCost)
     }
     
     private var isCurrentUser: Bool {
@@ -226,10 +197,15 @@ struct LeaderboardRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
-            // Value
-            Text(displayValue)
-                .fontWeight(entry.rank <= 10 ? .medium : .regular)
-                .frame(width: 120, alignment: .trailing)
+            // Value and total tokens
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(displayValue)
+                    .fontWeight(entry.rank <= 10 ? .medium : .regular)
+                Text(formatNumber(entry.totalTokens) + " tokens")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 120, alignment: .trailing)
             
             // Last active
             Text(formatRelativeDate(entry.lastActive))
