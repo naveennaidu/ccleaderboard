@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-07-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ccleaderboard",
+      "database_id": "2d0902ba-5661-4edf-9db9-0c8cdaa9d285",
+      "migrations_dir": "drizzle/migrations",
+    },
+  ],
+}
